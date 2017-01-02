@@ -1,8 +1,15 @@
 #!coding: utf-8
+import logging
+# show sql
+logger = logging.getLogger("om")
+logger.handlers = [logging.StreamHandler()]
+logger.setLevel(logging.DEBUG)
+
 from unittest import TestCase
 from om.db.backends import mysql
 from om.table import TableMapper, Column, Meta
 from om.tracking import get_holder
+
 
 spec = mysql.MySQLSpec("vagrant", "test", "root", "akun@123")
 pool = mysql.ConnectionPool(spec, driver=mysql.MySQLDriver())

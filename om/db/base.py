@@ -1,7 +1,11 @@
 #!coding: utf-8
+import logging
 import time
 import heapq
 from threading import RLock, Event
+
+
+logger = logging.getLogger(__name__)
 
 
 class DriverSpec(object):
@@ -277,6 +281,11 @@ class Database(object):
         self._pool = pool
 
     @classmethod
+    def log(cls, sql, args, kwargs):
+        logger.debug(u"[om][sql]%s, --args:%s, kwargs:%s", sql,
+                     repr(args), repr(kwargs))
+
+    @classmethod
     def format_column(cls, t_alias, col_name):
         return "%s.%s" % (t_alias, col_name)
 
@@ -384,7 +393,7 @@ class Database(object):
 
         We return the lastrowid from the query.
         """
-        print "330:sql:%s, --args:%s" % (query, repr(parameters))
+        self.log(query, parameters, None)
         con = self._allocate()
         cursor = con.cursor()
         err = None
@@ -403,6 +412,7 @@ class Database(object):
 
         We return the rowcount from the query.
         """
+        self.log(query, parameters, None)
         con = self._allocate()
         cursor = con.cursor()
         err = None
@@ -423,7 +433,7 @@ class Database(object):
     insertmany = executemany_lastrowid
 
     def _execute(self, cursor, query, parameters, kwparameters):
-        print "368:%s, --args%s" % (query, repr(parameters))
+        self.log(query, parameters, kwparameters)
         try:
             return cursor.execute(query, kwparameters or parameters)
         except self.OperationalError as e:
