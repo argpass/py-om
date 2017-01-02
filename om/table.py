@@ -5,7 +5,7 @@ from threading import RLock
 from utils import make_meta_fn as meta_fn
 from tracking import convert_to_tracking_class, ZERO_VALUE, get_holder
 from exceptions import ImproperlyConfig
-from db import Database
+from db import Database, Rows
 
 __all__ = ["TableMapper", "Meta", "Column"]
 
@@ -1069,17 +1069,22 @@ class SelectPlan(object):
             QueryIterator
         """
         sql, args = self._get_sql_args()
-        it = self._ctx.db_spec.iter(sql, *args)
-        return QueryIterator(self._result_field_pos_idx, it)
+        rows = self._ctx.db_spec.iter(sql, *args)
+        return QueryIterator(self._result_field_pos_idx, rows)
 
 
 class QueryIterator(object):
     """QueryIterator is an iterator to scan query results
     """
 
-    def __init__(self, result_field_pos_idx, it):
+    def __init__(self, result_field_pos_idx, rows):
+        """
+        Args:
+            result_field_pos_idx(tuple):
+            rows(Rows):
+        """
         self._result_field_pos_idx = result_field_pos_idx
-        self._it = it
+        self._rows = rows
         self._gen = None
 
     @property
@@ -1103,7 +1108,7 @@ class QueryIterator(object):
         return self.__str__()
 
     def _iter(self):
-        for row in self._it:
+        for row in self._rows:
             i = 0
             col_names = row.get_col_names()
             data = row.get_data_tuple()
@@ -1119,8 +1124,6 @@ class QueryIterator(object):
                 yield tuple(result)
             elif len(result) == 1:
                 yield result[0]
-            else:
-                continue
 
     @classmethod
     def _wrap_instance(cls, entity_class, it):
@@ -1139,6 +1142,12 @@ class QueryIterator(object):
         if self._gen is None:
             self._gen = self._iter()
         return next(self._gen)
+
+    def __del__(self):
+        return self.close()
+
+    def close(self):
+        return self._rows.close()
 
 
 class UpdatePlan(object):

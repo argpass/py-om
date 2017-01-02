@@ -207,6 +207,62 @@ class Row(dict):
             raise AttributeError(name)
 
 
+class Rows(object):
+    class IterOnClosedRows(Exception):
+        pass
+
+    def __init__(self, cursor, con, database):
+        """
+        Args:
+            cursor:
+            con(DriverConnection):
+            database(Database):
+        """
+        self._cursor = cursor
+        self._connection = con
+        self._db = database
+        self._free = getattr(self._db, "_free")
+        self._closed = False
+        self._gen = None
+
+    def close(self):
+        if self._closed:
+            return
+        try:
+            self._cursor.close()
+        finally:
+            self._free(self._connection, None)
+            self._closed = True
+
+    @property
+    def is_closed(self):
+        return self._closed
+
+    def _iter(self):
+        err = None
+        try:
+            column_names = [d[0] for d in self._cursor.description]
+            for row in self._cursor:
+                if self.is_closed:
+                    raise self.IterOnClosedRows(u"iter on a closed "
+                                                u"`Rows` is denied")
+                yield Row(column_names, row)
+        except Exception as e:
+            err = e
+            raise
+        finally:
+            self._cursor.close()
+            self._free(self._connection, err)
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        if self._gen is None:
+            self._gen = self._iter()
+        return next(self._gen)
+
+
 class Database(object):
     """Database wrapper, all operation is on a connection cursor
     all connections managed in a connection pool
@@ -265,18 +321,15 @@ class Database(object):
         """Returns an iterator for the given query and parameters."""
         con = self._allocate()
         cursor = con.cursor()
-        err = None
         try:
             self._execute(cursor, query, parameters, kwparameters)
-            column_names = [d[0] for d in cursor.description]
-            for row in cursor:
-                yield Row(column_names, row)
+            return Rows(cursor, con, self)
         except Exception as e:
+            # got err, close current con and cursor
             err = e
-            raise
-        finally:
             cursor.close()
             self._free(con, err)
+            raise
 
     def query(self, query, *parameters, **kwparameters):
         return list(self.iter(query, *parameters, **kwparameters))
