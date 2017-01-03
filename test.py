@@ -69,7 +69,7 @@ class Book(Entity):
 class Authors(Base):
     name = Column(db_column="name")
 
-    class Meta(Meta):
+    class Meta(object):
         identifiers = ("id",)
         db_table = "author"
         database = db

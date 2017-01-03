@@ -10,8 +10,7 @@ from db import Database, Rows
 __all__ = ["TableMapper", "Meta", "Column"]
 
 _TABLE_META_CLASS_NAME = "_table_meta_class"
-
-redundant_props_names = set(type("_empty", (object,), {}).__dict__.keys())
+FIELD_TYPE_SET = {int, str}
 
 
 class EntityInfo(object):
@@ -74,9 +73,9 @@ class EntityMapper(object):
                 for p in reversed(entity.mro()):
                     if p is object:
                         continue
-                    # merge fields, filter fields not in `redundant_props_names`
+                    # merge fields
                     merged_dict.update({k: v for k, v in p.__dict__.items()
-                                        if k not in redundant_props_names})
+                                        if v in FIELD_TYPE_SET})
                 if not merged_dict:
                     raise ImproperlyConfig(u"entity never be empty class, "
                                            u"cls:%s", entity)
