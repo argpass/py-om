@@ -10,7 +10,6 @@ from db import Database, Rows
 __all__ = ["TableMapper", "Meta", "Column"]
 
 _TABLE_META_CLASS_NAME = "_table_meta_class"
-FIELD_TYPE_SET = {int, str}
 
 
 class EntityInfo(object):
@@ -18,10 +17,21 @@ class EntityInfo(object):
         """
         Args:
             entity:
-            field_dict(dict): raw field map `{property_name=>raw value}`
+            field_dict(dict): field map `{property_name=>column object}`
         """
         self._entity = entity
         self._field_dict = field_dict
+        self._field_names = field_dict.keys()
+
+    def get_column(self, prop_name):
+        """
+        Args:
+            prop_name(str):
+
+        Returns:
+            Column
+        """
+        return self._field_dict.get(prop_name)
 
     def new_instance(self):
         """New an instance of the entity
@@ -39,16 +49,33 @@ class EntityInfo(object):
     def field_names(self):
         """
         Returns:
-            list
+            list: ["prop_name",...]
         """
-        return self._field_dict.keys()
+        return self._field_names
 
 
 class EntityMapper(object):
     def __init__(self):
         self._lock = RLock()
-        # entity_class => info
+        # entity_class => EntityInfo object
         self._entity_map = dict()
+
+    def ensure_registered(self, entity_or_obj, table_mapper):
+        """
+        Args:
+            entity_or_obj(object):
+            table_mapper(TableMapper):
+        """
+        self._get_or_create(entity_or_obj, table_mapper)
+
+    @classmethod
+    def convert_to_class(cls, entity_or_obj):
+        entity = entity_or_obj
+        if not hasattr(entity_or_obj, "mro"):
+            # may be entity is instance object
+            # so change to its class as entity
+            entity = entity_or_obj.__class__
+        return entity
 
     def get_entity_info(self, entity_or_obj):
         """
@@ -57,25 +84,23 @@ class EntityMapper(object):
         Returns:
             EntityInfo
         """
-        entity = entity_or_obj
-        if not hasattr(entity_or_obj, "mro"):
-            # may be entity is instance object
-            # so change to its class as entity
-            entity = entity_or_obj.__class__
-        info = self._get_or_create(entity)
-        return info
+        entity = self.convert_to_class(entity_or_obj)
+        return self._entity_map.get(entity)
 
-    def _get_or_create(self, entity):
+    def _get_or_create(self, entity, table_mapper):
+        """
+        Args:
+            entity:
+            table_mapper(TableMapper):
+        """
         self._lock.acquire()
         try:
+            entity = self.convert_to_class(entity)
             if entity not in self._entity_map:
                 merged_dict = dict()
-                for p in reversed(entity.mro()):
-                    if p is object:
-                        continue
-                    # merge fields
-                    merged_dict.update({k: v for k, v in p.__dict__.items()
-                                        if v in FIELD_TYPE_SET})
+                for prop_name, column \
+                        in table_mapper.get_meta().__cols__.items():
+                    merged_dict[prop_name] = column
                 if not merged_dict:
                     raise ImproperlyConfig(u"entity never be empty class, "
                                            u"cls:%s", entity)
@@ -316,8 +341,10 @@ class Column(object):
     def __eq__(self, other):
         """Equal test
         Notes: col == None means `col is null`
+
         Args:
             other: value or other columns
+
         Returns:
             Expr
         """
@@ -522,9 +549,6 @@ class TableMapperType(type):
 
         # :build props which need merged with parents'
         meta.__managed_set__ = set(getattr(meta, "managed", None) or ())
-        # hack entities, make it suitable for the `TableMapper`
-        for entity in meta.__managed_set__:
-            mcs.hack_entity(entity)
         # hack managed entities
         meta.__identifier_set__ = set(getattr(meta, "identifiers", None) or ())
         for name in meta.__identifier_set__:
@@ -543,13 +567,18 @@ class TableMapperType(type):
             for name, col in meta.__cols__.items():
                 setattr(cls, name, col)
 
+        # hack entities, make it suitable for the `TableMapper`
+        for entity in meta.__managed_set__:
+            mcs.hack_entity(entity, cls)
+
         return cls
 
     @classmethod
-    def hack_entity(mcs, entity):
+    def hack_entity(mcs, entity, table_mapper):
         # make entity as a dirty tracking class
         # 1.save raw field map of the entity ({property_name=>raw value})
         # 2.replace raw field map to `{property_name=>tracking.Field()}`
+        entity_mapper.ensure_registered(entity, table_mapper)
         info = entity_mapper.get_entity_info(entity)
         convert_to_tracking_class(entity, info.field_names())
 

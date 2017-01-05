@@ -1,6 +1,11 @@
 # py-om
 `om` isn't a `ORM` framework but object mapping library.
 
+## todo
+- 使用原生sql查询Entities
+- Entity可以跨多个TableMapper (如:终端信息跨车辆和设备两张表)
+- Column的数据验证
+
 ## Domain Models
 Domain models(See `Domain Driven Development`) are normal classes without
 complex magic fields.
